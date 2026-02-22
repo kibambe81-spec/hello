@@ -1,0 +1,12 @@
+services:
+  - name: hello
+    type: web
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    plan: free
