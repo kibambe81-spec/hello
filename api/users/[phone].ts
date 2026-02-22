@@ -10,46 +10,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  const { phone, name } = req.body || {};
+  const { phone } = req.query;
+  const userData = req.body;
 
   if (!phone) {
     return res.status(400).json({ error: 'Phone required' });
   }
 
   try {
-    // Find user by phone
-    const { data: existingUser, error: findError } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .select('*')
       .eq('phone', phone)
       .maybeSingle();
 
-    if (findError) throw findError;
+    if (error) throw error;
 
-    if (existingUser) {
-      return res.json(existingUser);
+    if (!data) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    // Create new user
-    const { data: newUser, error: createError } = await supabase
-      .from('users')
-      .insert({
-        phone,
-        name: name || phone,
-        avatar_url: null,
-        language: 'en',
-        theme: 'light',
-        blocked_numbers: '[]',
-        privacy_settings: '{"publications": "everyone"}'
-      })
-      .select()
-      .single();
-
-    if (createError) throw createError;
-
-    res.json(newUser);
+    res.json(data);
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('Error finding user:', error);
     res.status(500).json({ error: error.message });
   }
 }
