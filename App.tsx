@@ -151,58 +151,36 @@ export default function App() {
     }
   }, [currentUser, showPublications]);
 
-  // WebSocket Connection
+  // Polling for new messages (replaces WebSocket for Vercel)
   useEffect(() => {
-    if (currentUser) {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(`${protocol}//${window.location.host}`);
-      socketRef.current = socket;
+    if (!currentUser || !selectedUser) return;
 
-      socket.onopen = () => {
-        socket.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
-      };
-
-      socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'chat') {
-          const msg = data.message;
-          if (
-            (msg.sender_id === currentUser.id && msg.receiver_id === selectedUser?.id) ||
-            (msg.sender_id === selectedUser?.id && msg.receiver_id === currentUser.id)
-          ) {
-            setMessages(prev => {
-              const exists = prev.find(m => m.id === msg.id);
-              if (exists) {
-                return prev.map(m => m.id === msg.id ? msg : m);
-              }
-              return [...prev, msg];
-            });
-          }
-        } else if (data.type === 'delete-message') {
-          const msg = data.message;
+    const fetchMessages = () => {
+      fetch(`/api/messages?userId=${currentUser.id}&otherId=${selectedUser.id}`)
+        .then(res => res.json())
+        .then(data => {
           setMessages(prev => {
-            // If deleted for everyone, update the message in the list
-            if (msg.deleted_for_everyone) {
-              return prev.map(m => m.id === msg.id ? msg : m);
+            const existingIds = new Set(prev.map(m => m.id));
+            const newMessages = data.filter((m: Message) => !existingIds.has(m.id));
+            if (newMessages.length > 0) {
+              return [...prev, ...newMessages];
             }
-            // If deleted for me, remove it from the list
-            const deletedBy = JSON.parse(msg.deleted_by || '[]');
-            if (deletedBy.includes(currentUser.id)) {
-              return prev.filter(m => m.id !== msg.id);
-            }
-            return prev;
+            return data;
           });
-        }
-      };
+        })
+        .catch(console.error);
+    };
 
-      return () => socket.close();
-    }
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(interval);
   }, [currentUser, selectedUser]);
 
   // Fetch messages when selecting a user
   useEffect(() => {
     if (currentUser && selectedUser) {
-      fetch(`/api/messages/${currentUser.id}/${selectedUser.id}`)
+      fetch(`/api/messages?userId=${currentUser.id}&otherId=${selectedUser.id}`)
         .then(res => res.json())
         .then(data => setMessages(data));
     }
@@ -243,18 +221,29 @@ export default function App() {
     });
   };
 
-  const sendMessage = (e?: React.FormEvent) => {
+  const sendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!messageInput.trim() || !currentUser || !selectedUser || !socketRef.current) return;
+    if (!messageInput.trim() || !currentUser || !selectedUser) return;
 
-    socketRef.current.send(JSON.stringify({
-      type: 'chat',
-      senderId: currentUser.id,
-      receiverId: selectedUser.id,
-      content: messageInput,
-      msgType: 'text'
-    }));
-    setMessageInput('');
+    try {
+      await fetch('/api/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: currentUser.id,
+          receiverId: selectedUser.id,
+          content: messageInput,
+          msgType: 'text'
+        })
+      });
+      setMessageInput('');
+      // Refresh messages
+      const res = await fetch(`/api/messages?userId=${currentUser.id}&otherId=${selectedUser.id}`);
+      const data = await res.json();
+      setMessages(data);
+    } catch (error) {
+      console.error('Failed to send message', error);
+    }
   };
 
   const deleteMessage = (messageId: string, forEveryone: boolean) => {
