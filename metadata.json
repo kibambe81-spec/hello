@@ -1,0 +1,5 @@
+{
+  "name": "HELLO",
+  "description": "A futuristic, secure, and private chat application named HELLO for sharing messages, videos, and files with friends using phone numbers.",
+  "requestFramePermissions": ["microphone", "camera"]
+}
